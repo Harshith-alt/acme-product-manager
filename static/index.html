@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Acme Importer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded shadow">
+        <h1 class="text-2xl font-bold mb-6 text-blue-600">Acme Product Manager</h1>
+
+        <div class="mb-8 border-b pb-4">
+            <h2 class="font-bold text-lg mb-2">Import Products (CSV)</h2>
+            <input type="file" id="csvFile" class="border p-2 w-full mb-2">
+            <button onclick="uploadCSV()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Upload</button>
+            
+            <div id="progress-container" class="hidden mt-4">
+                <div class="w-full bg-gray-200 rounded-full h-4">
+                    <div id="progress-bar" class="bg-green-500 h-4 rounded-full" style="width: 0%"></div>
+                </div>
+                <p id="status-text" class="text-sm mt-1 text-gray-600">Waiting...</p>
+            </div>
+        </div>
+
+        <div class="mb-8 border-b pb-4">
+            <button onclick="deleteAll()" class="bg-red-500 text-white px-4 py-2 rounded text-sm">Delete All Products</button>
+        </div>
+
+       
+        <div>
+            <div class="flex justify-between mb-4">
+                <h2 class="font-bold text-lg">Products</h2>
+                <input type="text" id="search" placeholder="Search SKU..." class="border p-1" onkeyup="loadProducts()">
+            </div>
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-200"><th class="p-2">SKU</th><th class="p-2">Name</th><th class="p-2">Status</th></tr>
+                </thead>
+                <tbody id="product-table"></tbody>
+            </table>
+            <div class="mt-2">
+                <button onclick="changePage(-1)" class="border px-2">Prev</button>
+                <span id="page-num">1</span>
+                <button onclick="changePage(1)" class="border px-2">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+
+        async function uploadCSV() {
+            const fileInput = document.getElementById('csvFile');
+            const file = fileInput.files[0];
+            if(!file) return alert("Select a file");
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            document.getElementById('progress-container').classList.remove('hidden');
+            
+            const res = await fetch('/api/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+            trackProgress(data.task_id);
+        }
+
+        async function trackProgress(taskId) {
+            const interval = setInterval(async () => {
+                const res = await fetch(`/api/upload/status/${taskId}`);
+                const data = await res.json();
+                
+                document.getElementById('progress-bar').style.width = data.percent + "%";
+                document.getElementById('status-text').innerText = data.state + " " + data.percent + "%";
+
+                if (data.state === "SUCCESS" || data.state === "FAILURE") {
+                    clearInterval(interval);
+                    loadProducts();
+                    alert("Import " + data.state);
+                }
+            }, 1000);
+        }
+
+        async function loadProducts() {
+            const search = document.getElementById('search').value;
+            const res = await fetch(`/api/products?page=${currentPage}&search=${search}`);
+            const result = await res.json();
+            
+            const tbody = document.getElementById('product-table');
+            tbody.innerHTML = result.data.map(p => `
+                <tr class="border-b">
+                    <td class="p-2">${p.sku}</td>
+                    <td class="p-2">${p.name}</td>
+                    <td class="p-2">${p.is_active ? 'Active' : 'Inactive'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function deleteAll() {
+            if(!confirm("Are you sure? This cannot be undone.")) return;
+            await fetch('/api/products/all', { method: 'DELETE' });
+            loadProducts();
+        }
+
+        function changePage(delta) {
+            if(currentPage + delta > 0) {
+                currentPage += delta;
+                document.getElementById('page-num').innerText = currentPage;
+                loadProducts();
+            }
+        }
+
+        loadProducts();
+    </script>
+</body>
+</html>
